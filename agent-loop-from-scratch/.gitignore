@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Secrets: NEVER commit these. `.env` holds your ANTHROPIC_API_KEY.
+# (`.env.example` is safe to commit: it only lists variable names, no values.)
+# ---------------------------------------------------------------------------
+.env
+
+# ---------------------------------------------------------------------------
+# Python / uv artifacts that are rebuilt automatically
+# ---------------------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# ---------------------------------------------------------------------------
+# Raw request/response logs written by the agent (Phase 7). They can contain
+# file contents and web pages the agent read, so keep them out of git.
+# ---------------------------------------------------------------------------
+traces/

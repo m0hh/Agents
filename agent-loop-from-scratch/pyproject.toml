@@ -1,0 +1,55 @@
+# =============================================================================
+# pyproject.toml: the single config file for a modern Python project.
+#
+# `uv` reads this file to know:
+#   - what the project is called and which Python it needs   ([project])
+#   - which libraries to install                              (dependencies)
+#   - which terminal commands the project provides            ([project.scripts])
+#   - how to build it into an installable package             ([build-system])
+#   - dev-only tools such as pytest                           ([dependency-groups])
+#
+# You rarely edit dependency lists by hand. Use:
+#   uv add <package>          → adds a runtime dependency
+#   uv add --dev <package>    → adds a dev-only dependency
+# `uv` also writes `uv.lock`, which pins the EXACT version of every package
+# (including sub-dependencies) so every machine installs the same thing.
+# =============================================================================
+
+[project]
+name = "agent-loop"
+version = "0.1.0"
+description = "An AI agent loop built from scratch: raw HTTP to the Claude Messages API, hand-written tools, no frameworks."
+authors = [
+    { name = "m0hh", email = "lordegy53@gmail.com" }
+]
+# We only use features available since Python 3.12 (e.g. `X | None` types).
+requires-python = ">=3.12"
+dependencies = [
+    # httpx2: the maintained fork of the popular `httpx` HTTP client (same API).
+    # It's also what the official Anthropic Python SDK uses internally, so we
+    # are doing by hand exactly what the SDK does for you.
+    "httpx2>=2.13.1",
+    # python-dotenv: loads variables from the `.env` file into os.environ.
+    "python-dotenv>=1.2.3",
+    # rich: colored terminal output, pretty JSON, tables and panels.
+    "rich>=15.0.0",
+]
+
+# Each line here becomes a terminal command inside the project's environment.
+#   `uv run hello`  →  calls the function `main()` in src/agent_loop/hello.py
+[project.scripts]
+hello = "agent_loop.hello:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+# Tools needed only while developing (not by people who merely use the app).
+dev = [
+    "pytest>=9.1.1",
+]
+
+# pytest settings: where the tests live.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
