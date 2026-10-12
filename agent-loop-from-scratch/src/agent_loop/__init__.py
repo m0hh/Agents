@@ -11,6 +11,8 @@ Modules (the phase each one arrives in is in brackets):
     agent         [P2]  one user turn → API call → result (the loop arrives in P4)
     cli_args      [P2]  command-line flags shared by every program
     cli           [P2]  the interactive chat REPL (`uv run agent`)
+    tools/        [P3]  calculator, read_file, fetch_url + the tool registry
+    tools_cli     [P3]  explore the tools by hand (`uv run tools ...`)
 
 See PROJECT_PLAN.md in the project root for the full roadmap.
 """

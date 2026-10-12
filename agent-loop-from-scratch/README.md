@@ -28,6 +28,9 @@ cp .env.example .env
 | 2 | `uv run agent` | Interactive chat with memory. Try `/history` and `/stats` |
 | 2 | `uv run agent --thinking 2048` | The same, with thinking shown dimmed above each answer |
 | 2 | `uv run python experiments/message_rules.py` | Probes which "invalid" conversations the real API accepts |
+| 3 | `uv run tools list` | Shows the tool definitions (JSON Schemas) the model sees |
+| 3 | `uv run tools call read_file '{"path": "."}'` | Runs a tool locally (no model, no API key needed) |
+| 3 | `uv run tools ask "What is 2**32 / 7?"` | Shows the `tool_use` block the model answers with (doesn't run it) |
 
 Add `--help` to any command to see all its options.
 
@@ -48,3 +51,4 @@ uv run pytest        # free and offline: the API is replaced by a fake network
 | `AGENT_THINKING_BUDGET` | `0` (off) | Extended-thinking budget (≥ 1024 and < max tokens) |
 | `AGENT_TIMEOUT_SECONDS` | `120` | How long to wait for the API |
 | `AGENT_BASE_URL` | `https://api.anthropic.com` | API root URL |
+| `AGENT_WORKSPACE_DIR` | `./workspace` | The only folder `read_file` may read |

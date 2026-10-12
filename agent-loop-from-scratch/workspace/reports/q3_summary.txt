@@ -1,0 +1,5 @@
+Q3 sales summary (EUR)
+July: 12,400
+August: 9,850
+September: 14,120
+Notes: August was slow because of the summer holidays.

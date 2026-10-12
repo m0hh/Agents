@@ -67,6 +67,11 @@ DEFAULT_MAX_TOKENS = 16_000
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 
+# The ONLY folder the read_file tool may read from (Phase 3). The model can
+# ask to read any path it likes; the tool refuses anything outside this
+# "sandbox" folder.
+DEFAULT_WORKSPACE_DIR = PROJECT_ROOT / "workspace"
+
 
 # -----------------------------------------------------------------------------
 # Errors
@@ -118,6 +123,9 @@ class Settings:
 
     # Seconds to wait for the server before giving up on a request.
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+
+    # The sandbox folder for the read_file tool.
+    workspace_dir: Path = DEFAULT_WORKSPACE_DIR
 
     # `__post_init__` runs automatically right after the dataclass sets its
     # fields. It's the standard place to validate a dataclass.
@@ -211,6 +219,7 @@ def load_settings(
         AGENT_THINKING_BUDGET  thinking tokens, 0=off (default: 0)
         AGENT_TIMEOUT_SECONDS  request timeout        (default: 120)
         AGENT_BASE_URL         API root URL           (default: https://api.anthropic.com)
+        AGENT_WORKSPACE_DIR    read_file's sandbox    (default: <project>/workspace)
 
     Why the AGENT_ prefix? Other tools on your machine (e.g. Claude Code or the
     official SDK) may read variables such as ANTHROPIC_MODEL or
@@ -237,4 +246,5 @@ def load_settings(
         thinking_budget=_read_int(environ, "AGENT_THINKING_BUDGET", 0),
         base_url=environ.get("AGENT_BASE_URL", "").strip() or DEFAULT_BASE_URL,
         timeout_seconds=_read_float(environ, "AGENT_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
+        workspace_dir=Path(environ.get("AGENT_WORKSPACE_DIR", "").strip() or DEFAULT_WORKSPACE_DIR),
     )

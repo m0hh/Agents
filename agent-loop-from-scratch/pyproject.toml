@@ -25,6 +25,9 @@ authors = [
 # We only use features available since Python 3.12 (e.g. `X | None` types).
 requires-python = ">=3.12"
 dependencies = [
+    # beautifulsoup4: parses messy real-world HTML so fetch_url can extract
+    # the readable text of a web page (Phase 3).
+    "beautifulsoup4>=4.15.0",
     # httpx2: the maintained fork of the popular `httpx` HTTP client (same API).
     # It's also what the official Anthropic Python SDK uses internally, so we
     # are doing by hand exactly what the SDK does for you.
@@ -38,9 +41,11 @@ dependencies = [
 # Each line here becomes a terminal command inside the project's environment.
 #   `uv run hello`  →  calls the function `main()` in src/agent_loop/hello.py
 #   `uv run agent`  →  calls the function `main()` in src/agent_loop/cli.py
+#   `uv run tools`  →  calls the function `main()` in src/agent_loop/tools_cli.py
 [project.scripts]
 hello = "agent_loop.hello:main"
 agent = "agent_loop.cli:main"
+tools = "agent_loop.tools_cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]

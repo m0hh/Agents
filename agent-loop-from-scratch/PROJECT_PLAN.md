@@ -12,7 +12,7 @@
 |---|-------|--------|
 | 1 | Hello, raw API: your first HTTP request to the model | ✅ |
 | 2 | Conversation memory: a chat REPL with no tools | ✅ |
-| 3 | Tools: JSON schemas and implementations | ⬜ |
+| 3 | Tools: JSON schemas and implementations | ✅ |
 | 4 | The agent loop: run tools and feed results back | ⬜ |
 | 5 | Stop conditions and guardrails | ⬜ |
 | 6 | Reliability: retries, timeouts and errors | ⬜ |
@@ -273,6 +273,7 @@ agent-loop-from-scratch/
 │   │   ├── file_reader.py   ← sandboxed read_file                         (P3)
 │   │   ├── web_fetch.py     ← fetch_url with limits                       (P3)
 │   │   └── __init__.py      ← tool registry                               (P3)
+│   ├── tools_cli.py         ← `uv run tools list | call | ask`            (P3)
 │   ├── agent.py             ← THE LOOP                                    (P2, P4, P5)
 │   ├── usage.py             ← token + cost accounting                     (P2, P7)
 │   ├── tracing.py           ← JSONL log of every request/response         (P7)
@@ -376,25 +377,29 @@ Each phase has the same parts:
 **You'll learn:**
 - The parts of a tool definition: `name`, `description`, `input_schema`.
 - **Descriptions are prompts.** Say *when* to use the tool, not only what it does.
-- `strict: true` + `additionalProperties: false`: the API guarantees the model's input matches your schema.
+- `strict: true` + `additionalProperties: false`: the API guarantees the model's input matches your schema. Tested live: strict mode **rejects** keywords like `minimum` (400), so range rules live in code.
+- **Tools cost tokens on every request.** Tested live: the same question used about 50 input tokens without tools and about 1,090 with our three tools attached, even when no tool was used.
 - **Client tools vs server tools.** Anthropic also hosts server-side tools, such as its own web fetch. Ours run on *your* machine, and you control them completely.
 - **Tools are an attack surface.** Tool inputs come from the model, so treat them as untrusted:
-  - `calculator` parses with Python's `ast` module and allows only math operations. Never `eval()`.
-  - `read_file` resolves the path and refuses anything outside `./workspace`, blocking `../../etc/passwd`. It also caps file size.
-  - `fetch_url` accepts only `http`/`https`, uses a timeout and a max download size, blocks `localhost` and private IPs (SSRF), and converts HTML to text. Fetched pages can contain prompt injection, so their text is data, never instructions.
+  - `calculator` parses with Python's `ast` module and allows only math operations (an allow-list). Never `eval()`. Size limits also stop "math bombs" like `9**9**9`.
+  - `read_file` *resolves* the path, then refuses anything outside `./workspace` (`../`, absolute paths, symlinks) and hidden files like `.env`. It caps file size and returns 200 numbered lines per call (pagination with a "call again with start_line=..." hint).
+  - `fetch_url` accepts only `http`/`https`, resolves DNS and blocks private/local IPs (SSRF), re-checks **every redirect**, stops at 2 MB, converts HTML to text, truncates to 8,000 characters, and wraps the page in `UNTRUSTED WEB CONTENT` markers.
 - **Keep tool outputs small.** Every character you return is resent on every later loop iteration.
+- **Error messages are written for the model:** say what went wrong and how to fix it, because the model reads them and retries.
 
 **We'll build:**
-- `tools/base.py`: a `Tool` dataclass (`name`, `description`, `input_schema`, `run`) and a `ToolError` exception.
-- `tools/calculator.py`, `tools/file_reader.py`, `tools/web_fetch.py`.
-- `tools/__init__.py`: a registry with `tool_definitions()` (the list sent to the API) and `get_tool(name)`.
-- `workspace/` with sample files (e.g. `prices.csv`, `notes.md`).
-- `tests/test_tools.py`: unit tests, including the attacks (path traversal, `__import__` in the calculator).
-- A one-shot script that sends a question with the tools attached and prints the `tool_use` block that comes back.
+- `tools/base.py`: a `Tool` dataclass (`name`, `description`, `input_schema`, `function`), `ToolError`, and a tiny hand-written JSON Schema validator.
+- `tools/calculator.py`, `tools/file_reader.py`, `tools/web_fetch.py` (factories with injectable limits, fake network and fake DNS for tests).
+- `tools/__init__.py`: a `ToolRegistry` with `definitions()` (the list sent to the API) and `get(name)`.
+- `workspace/` with sample files: `prices.csv`, `notes.md`, `reports/q3_summary.txt`, a 450-line `long_log.txt` (for pagination), and `injection_demo.txt` (for a Phase 4 experiment).
+- `tools_cli.py` (`uv run tools list | call | ask`): see the definitions, run a tool locally, or send a question with tools attached and print the `tool_use` block.
+- Tests for every tool, including the attacks (path traversal, symlinks, `__import__`, SSRF via redirects).
 
 **Try it:**
-- Ask "What is 2**32 / 7?" and read the `tool_use` block: `id`, `name`, `input`.
-- Ask "What's the capital of France?" and see the model answer without any tool.
+- `uv run tools ask "What is 2**32 / 7?"` and read the `tool_use` block: `id`, `name`, `input`.
+- `uv run tools ask "What's the capital of France?"`: the model answers without any tool.
+- Add `--no-tools` and compare the input tokens.
+- `uv run tools call read_file '{"path": "../.env"}'` and `uv run tools call fetch_url '{"url": "http://localhost:8080"}'`: watch the defenses work.
 - Make the calculator's description vague and see whether the model still chooses it.
 
 **Done when:** tests pass, and you can read a `tool_use` block and say what the model wants.
@@ -426,6 +431,8 @@ Each phase has the same parts:
 - Multi-step: "Read prices.csv and compute the total with 14% VAT."
 - Parallel: "What are 3^7 and 7^3?" Watch for two `tool_use` blocks in one response.
 - Error recovery: "Read secrets.txt" (it doesn't exist) and watch the model react to `is_error`.
+- Pagination: "Find the ERROR line in long_log.txt". The error is on line 337, beyond the first 200-line page.
+- Prompt injection: "Summarize injection_demo.txt". Does the model obey the hidden instruction to answer "BANANA"?
 
 **Done when:** the agent answers multi-step questions, and the tests check the exact request payloads.
 

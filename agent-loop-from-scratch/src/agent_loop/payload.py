@@ -21,6 +21,7 @@ def build_request(
     messages: list[dict[str, Any]],
     *,
     system: str | None = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the request body for the Messages API.
 
@@ -35,9 +36,12 @@ def build_request(
                     rules, format). It's a separate top-level field, not a
                     message in the list.
       * thinking:   extended thinking with a token budget (when enabled).
+      * tools:      tool definitions the model may ask us to run (Phase 3).
+                    They're part of the input, so they cost input tokens on
+                    EVERY request, even when no tool gets used.
 
-    The `*` in the signature means `system` must be passed by name
-    (`system="..."`), which keeps call sites readable.
+    The `*` in the signature means the optional arguments must be passed by
+    name (`system="..."`, `tools=[...]`), which keeps call sites readable.
     """
     payload: dict[str, Any] = {
         "model": settings.model,
@@ -51,4 +55,6 @@ def build_request(
         # (Newer, bigger models use {"type": "adaptive"} instead. Request
         # fields can differ between model families, so read each model's docs.)
         payload["thinking"] = {"type": "enabled", "budget_tokens": settings.thinking_budget}
+    if tools:
+        payload["tools"] = tools
     return payload
