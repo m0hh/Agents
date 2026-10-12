@@ -11,7 +11,7 @@
 | # | Phase | Status |
 |---|-------|--------|
 | 1 | Hello, raw API: your first HTTP request to the model | ✅ |
-| 2 | Conversation memory: a chat REPL with no tools | ⬜ |
+| 2 | Conversation memory: a chat REPL with no tools | ✅ |
 | 3 | Tools: JSON schemas and implementations | ⬜ |
 | 4 | The agent loop: run tools and feed results back | ⬜ |
 | 5 | Stop conditions and guardrails | ⬜ |
@@ -206,7 +206,7 @@ anthropic-workspace-id: wrkspc_...     ← only if your key isn't scoped to a wo
 
 ### 5.5 The five rules of the message list
 
-1. **Roles alternate**: `user`, `assistant`, `user`, ... The first message is always `user`.
+1. **Roles alternate**: `user`, `assistant`, `user`, ... The first message is always `user`. (Tested live in Phase 2: the API silently *merges* two consecutive user messages instead of rejecting them. We enforce strict alternation in our own code anyway, so bugs can't hide.)
 2. **Copy the assistant's `content` array back exactly**, including `thinking` blocks. Don't extract only the text.
 3. **Every `tool_use` gets exactly one `tool_result`** with the same ID, in the very next `user` message.
 4. **All tool results from one turn go in one `user` message.** If you split them, the model learns to stop making parallel calls.
@@ -263,21 +263,25 @@ agent-loop-from-scratch/
 ├── src/agent_loop/
 │   ├── config.py            ← settings from environment variables        (P1)
 │   ├── api_client.py        ← raw HTTP to /v1/messages                    (P1, P6, P9)
+│   ├── payload.py           ← builds the request JSON body                 (P1, P3)
 │   ├── conversation.py      ← the append-only message list                (P2)
+│   ├── cli_args.py          ← command-line flags shared by all programs   (P2)
+│   ├── hello.py             ← one request, dissected                      (P1)
 │   ├── tools/
 │   │   ├── base.py          ← the Tool definition + ToolError             (P3)
 │   │   ├── calculator.py    ← safe math via Python's `ast` module         (P3)
 │   │   ├── file_reader.py   ← sandboxed read_file                         (P3)
 │   │   ├── web_fetch.py     ← fetch_url with limits                       (P3)
 │   │   └── __init__.py      ← tool registry                               (P3)
-│   ├── agent.py             ← THE LOOP                                    (P4, P5)
-│   ├── usage.py             ← token + cost accounting                     (P7)
+│   ├── agent.py             ← THE LOOP                                    (P2, P4, P5)
+│   ├── usage.py             ← token + cost accounting                     (P2, P7)
 │   ├── tracing.py           ← JSONL log of every request/response         (P7)
 │   ├── context.py           ← context budget + compaction                 (P8)
 │   ├── sse.py               ← hand-written streaming parser               (P9)
 │   └── cli.py               ← the terminal UI (REPL)                      (P2 onward)
 ├── workspace/               ← the only folder read_file may read
 ├── traces/                  ← raw request/response logs (git-ignored)
+├── experiments/             ← small scripts that probe the real API       (P2, P7)
 ├── tests/                   ← pytest, using fake API responses
 └── comparisons/             ← the same agent built with SDK / LangGraph   (P10)
 ```
@@ -337,17 +341,25 @@ Each phase has the same parts:
 - How the `messages` list is built, and the role-alternation rule.
 - Why you append the assistant's full `content` array, not just its text.
 - Because the API is stateless, **every turn resends the whole history**, so `input_tokens` grows every turn. This is your first view of context growth.
-- How to render content blocks by `type` (show text normally and thinking summaries dimmed).
+- **Commit only on success:** the new user message joins the history only after a good answer arrives, so a failed call or Ctrl-C never leaves the history broken.
+- **The API is more forgiving than its rules** (tested live): it silently merges two consecutive user messages. We enforce strict alternation ourselves, so bugs can't hide.
+- On Haiku 4.5, thinking blocks from earlier turns are ignored by the API (they don't count as input tokens), but we still send them back verbatim.
+- How to render content blocks by `type` (text as Markdown, thinking dimmed).
 
 **We'll build:**
-- `conversation.py`: a `Conversation` class holding `messages`, with only *append* methods (append-only by design).
-- `cli.py`: a REPL built with `rich`. Commands: `/exit`, `/reset`, `/history` (prints the raw JSON list).
-- A footer after each turn showing input and output tokens.
+- `conversation.py`: an append-only, validated `Conversation` (no edit or delete methods, and defensive copies).
+- `agent.py`: `Agent.run_turn()`, one API call per user message (a "loop of length one" that Phase 4 extends), returning a `TurnResult`.
+- `cli.py`: a REPL built with `rich`. Commands: `/help`, `/history` (raw JSON), `/stats` (tokens per turn with a growth bar chart), `/system`, `/reset`, `/exit`. A footer after each turn shows tokens, growth and cost.
+- Shared helpers: `payload.py` (request builder), `usage.py` (price table), `cli_args.py` (common flags).
+- `experiments/message_rules.py`: probes what the API actually accepts.
+- Tests with a scripted fake API (`tests/conftest.py`) and scripted keyboard input.
 
 **Try it:**
-- Chat for 6 turns and watch `input_tokens` rise each turn.
+- Chat for 6 turns and watch `input_tokens` rise each turn. Then type `/stats`.
 - Type `/history` and read the raw array that is sent to the API.
-- Send two `user` messages in a row on purpose and read the 400 error.
+- Press Ctrl-C while it's waiting for an answer, then `/history`: nothing half-finished was saved.
+- Run `uv run python experiments/message_rules.py` and see which "invalid" conversations the API accepts.
+- Chat with `--thinking 2048` and compare `/stats` with a chat without thinking.
 
 **Done when:** the REPL remembers earlier turns and you can explain why tokens grow.
 
@@ -405,7 +417,7 @@ Each phase has the same parts:
 - Validate tool inputs before running them, even with `strict: true`.
 
 **We'll build:**
-- `agent.py`: `Agent.run(user_text)` containing the `while` loop, plus `execute_tool_calls(blocks) -> list[tool_result]`.
+- `agent.py`: `Agent.run_turn()` (one API call since Phase 2) grows the `while` loop, plus `execute_tool_calls(blocks) -> list[tool_result]`.
 - Simple **event callbacks** (`on_tool_call`, `on_tool_result`, `on_text`) so the CLI can print each step. A small version of framework callbacks.
 - `cli.py` now uses the Agent.
 - `tests/test_agent.py`: uses `httpx2.MockTransport` to return scripted responses (a `tool_use`, then `end_turn`) and checks the exact JSON the agent sends.
@@ -501,7 +513,7 @@ Each phase has the same parts:
 - **Thinking is a cost lever:** the same task with thinking off vs a 2K vs an 8K budget.
 
 **We'll build:**
-- `usage.py`: `UsageRecord`, `UsageTracker` and a price table.
+- `usage.py` (started in Phase 2): `UsageRecord`, `UsageTracker`, and cache prices added to the price table.
 - A `/stats` command: a per-iteration table (input, output, cumulative $, context size).
 - `tracing.py`: writes every raw request and response to `traces/<session>.jsonl`.
 - A `/tokens` command that calls `count_tokens` on the current history.

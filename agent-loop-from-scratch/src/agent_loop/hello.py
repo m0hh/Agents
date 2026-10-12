@@ -18,7 +18,6 @@ so you can see the "atom" everything else is built from.
 """
 
 import argparse
-import dataclasses
 import json
 from typing import Any
 
@@ -36,7 +35,10 @@ from agent_loop.api_client import (
     build_headers,
     mask_secret,
 )
+from agent_loop.cli_args import add_settings_arguments, apply_overrides
 from agent_loop.config import ConfigError, Settings, load_settings
+from agent_loop.payload import build_request
+from agent_loop.usage import estimate_cost
 
 # One shared Console object prints everything (colors, tables, JSON).
 console = Console()
@@ -58,52 +60,22 @@ STOP_REASON_MEANINGS: dict[str, str] = {
     "refusal": "A safety system declined to continue this response.",
 }
 
-# Price per 1 MILLION tokens in US dollars: (input, output).
-# Output tokens cost 5x more than input tokens because generating text is far
-# more work for the model than reading it.
-# (Phase 7 turns this into a proper cost-tracking module.)
-PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5": (1.00, 5.00),
-}
-
 
 # -----------------------------------------------------------------------------
 # Step 1: build the request body
 # -----------------------------------------------------------------------------
 
 def build_payload(settings: Settings, prompt: str, system: str | None) -> dict[str, Any]:
-    """Build the JSON body for POST /v1/messages.
+    """Build the JSON body for a single-message request.
 
-    The three REQUIRED fields:
-      * model:      which model answers.
-      * max_tokens: the most tokens the model may WRITE (a safety ceiling).
-      * messages:   the conversation so far, a list of {"role", "content"}.
-                    Here it's just one user message. The API has no memory,
-                    so this list is the ONLY context the model gets.
-
-    OPTIONAL fields we use:
-      * system:     instructions that frame the whole conversation (persona,
-                    rules, format). It's a separate top-level field, not a message.
-      * thinking:   turn on extended thinking with a token budget.
+    The real work is in payload.build_request(), shared with the chat (Phase 2).
+    Here the conversation is just one user message.
     """
-    payload: dict[str, Any] = {
-        "model": settings.model,
-        "max_tokens": settings.max_tokens,
-        "messages": [
-            # `content` can be a plain string (shortcut) OR a list of typed
-            # blocks like [{"type": "text", "text": "..."}]. The string form
-            # is converted by the API into a single text block.
-            {"role": "user", "content": prompt},
-        ],
-    }
-    if system:
-        payload["system"] = system
-    if settings.thinking_enabled:
-        # "enabled" + budget_tokens is how Haiku 4.5 does extended thinking.
-        # (Newer, bigger models use {"type": "adaptive"} instead. Request
-        # fields can differ between model families, so read each model's docs.)
-        payload["thinking"] = {"type": "enabled", "budget_tokens": settings.thinking_budget}
-    return payload
+    # `content` can be a plain string (shortcut) OR a list of typed blocks
+    # like [{"type": "text", "text": "..."}]. The API turns the string form
+    # into a single text block.
+    messages = [{"role": "user", "content": prompt}]
+    return build_request(settings, messages, system=system)
 
 
 # -----------------------------------------------------------------------------
@@ -184,21 +156,6 @@ def describe_block(block: dict[str, Any]) -> str:
         return f"{block.get('name')}({json.dumps(block.get('input', {}))})"
     # Unknown/new block types: show the raw JSON. Never crash on something new!
     return _preview(json.dumps(block))
-
-
-def estimate_cost(model: str, usage: dict[str, Any]) -> float | None:
-    """Rough dollar cost of this call, or None if we don't know the model's price.
-
-    The response may report the model's full snapshot name (for example
-    "claude-haiku-4-5-<date>"), so we match by prefix.
-    """
-    for known_model, (input_price, output_price) in PRICES_PER_MILLION.items():
-        if model.startswith(known_model):
-            return (
-                usage.get("input_tokens", 0) * input_price
-                + usage.get("output_tokens", 0) * output_price
-            ) / 1_000_000
-    return None
 
 
 def explain_response(settings: Settings, body: dict[str, Any]) -> None:
@@ -307,14 +264,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("prompt", nargs="?", default=DEFAULT_PROMPT, help="what to say to the model")
     parser.add_argument("--system", help="a system prompt (instructions/persona)")
-    parser.add_argument("--model", help="override AGENT_MODEL")
-    parser.add_argument("--max-tokens", type=int, help="override AGENT_MAX_TOKENS")
-    parser.add_argument(
-        "--thinking",
-        type=int,
-        metavar="BUDGET",
-        help="turn on extended thinking with this token budget (>= 1024)",
-    )
+    # --model / --max-tokens / --thinking are shared with the chat (cli_args.py).
+    add_settings_arguments(parser)
     return parser.parse_args(argv)
 
 
@@ -322,19 +273,10 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point. Returns an exit code: 0 = success, 1 = API failure, 2 = bad config."""
     args = parse_args(argv)
 
-    # 1) Load and validate settings, then apply command-line overrides.
-    #    dataclasses.replace() creates a NEW Settings object (ours are frozen),
-    #    which re-runs the validation in __post_init__.
+    # 1) Load and validate settings, then apply command-line overrides
+    #    (which re-validates them; see cli_args.apply_overrides).
     try:
-        settings = load_settings()
-        overrides: dict[str, Any] = {}
-        if args.model:
-            overrides["model"] = args.model
-        if args.max_tokens is not None:
-            overrides["max_tokens"] = args.max_tokens
-        if args.thinking is not None:
-            overrides["thinking_budget"] = args.thinking
-        settings = dataclasses.replace(settings, **overrides)
+        settings = apply_overrides(load_settings(), args)
     except ConfigError as exc:
         console.print(f"[bold red]Config error:[/] {exc}")
         return 2

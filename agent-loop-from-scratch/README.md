@@ -25,8 +25,11 @@ cp .env.example .env
 |-------|---------|--------------|
 | 1 | `uv run hello` | Sends one message over raw HTTP and explains the request and response |
 | 1 | `uv run hello "Is 1001 prime?" --thinking 2048` | The same, with extended thinking turned on |
+| 2 | `uv run agent` | Interactive chat with memory. Try `/history` and `/stats` |
+| 2 | `uv run agent --thinking 2048` | The same, with thinking shown dimmed above each answer |
+| 2 | `uv run python experiments/message_rules.py` | Probes which "invalid" conversations the real API accepts |
 
-Run `uv run hello --help` to see all options.
+Add `--help` to any command to see all its options.
 
 ## Tests
 

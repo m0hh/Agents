@@ -14,6 +14,7 @@ from rich.console import Console
 
 from agent_loop import hello
 from agent_loop.config import Settings
+from agent_loop.usage import estimate_cost
 
 FAKE_KEY = "sk-ant-test-0000000000abcd"
 
@@ -50,10 +51,10 @@ def test_payload_with_system_prompt_and_thinking() -> None:
 
 
 def test_cost_estimate_matches_snapshot_model_names() -> None:
-    usage = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
+    usage_counts = {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
     # $1 per 1M input + $5 per 1M output = $6
-    assert hello.estimate_cost("claude-haiku-4-5-20251001", usage) == pytest.approx(6.0)
-    assert hello.estimate_cost("unknown-model", usage) is None
+    assert estimate_cost("claude-haiku-4-5-20251001", usage_counts) == pytest.approx(6.0)
+    assert estimate_cost("unknown-model", usage_counts) is None
 
 
 def test_explain_response_describes_every_block_type(captured_output: io.StringIO) -> None:

@@ -37,8 +37,10 @@ dependencies = [
 
 # Each line here becomes a terminal command inside the project's environment.
 #   `uv run hello`  →  calls the function `main()` in src/agent_loop/hello.py
+#   `uv run agent`  →  calls the function `main()` in src/agent_loop/cli.py
 [project.scripts]
 hello = "agent_loop.hello:main"
+agent = "agent_loop.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
